@@ -270,6 +270,7 @@ sub cmd__help {
 			$self->__die_help("No specific help for '$name'.\n");
 		}
 	} else {
+		my $subcommand_help_is_available = 0;
 		print("usage:\n");
 		foreach my $subcommand ($self->__subcommand_list()) {
 			my ($method, $name) = $self->__help_method($subcommand);
@@ -277,6 +278,7 @@ sub cmd__help {
 				my $help = $self->$method();
 				my $syntax      = defined $help ? $help->{syntax}      : undef;
 				my $description = defined $help ? $help->{description} : undef;
+				$subcommand_help_is_available = 1;
 				if (defined $syntax) {
 					print("  * $__PROGNAME $subcommand $syntax\n");
 				} else {
@@ -286,9 +288,11 @@ sub cmd__help {
 				print("    $__PROGNAME $subcommand\n");
 			}
 		}
-		print("\n");
-		print("For help on each available subcommand (indicated with * above), type:\n");
-		print("  $__PROGNAME help <subcommand>\n");
+		if ($subcommand_help_is_available) {
+			print("\n");
+			print("For help on each available subcommand (indicated with * above), type:\n");
+			print("  $__PROGNAME help <subcommand>\n");
+		}
 	}
 }
 
