@@ -18,6 +18,10 @@ App::Thingy - framework for building command-line tools
         # put your object initialization code here
         ...
     }
+    sub cmd_default {
+	my ($self) = @_;
+	$self->run("dog");
+    }
     sub cmd__cat {
         my ($self, @args) = @_;
         ...
@@ -239,15 +243,20 @@ sub new {
 }
 
 sub run {
-	my ($self, $subcommand, @arguments) = @_;
-	if (!defined $subcommand) {
-		$self->__die_help("no command specified.\n");
+    my ($self, $subcommand, @arguments) = @_;
+    if (!defined $subcommand) {
+	my $method = $self->can("cmd_default");
+	if (!$method) {
+	    $self->__die_help("no command specified.\n");
 	}
+	$self->$method();
+    } else {
 	my $method = $self->__method($subcommand);
 	if (!$method) {
-		$self->__die_help("unknown command '$subcommand'.\n");
+	    $self->__die_help("unknown command '$subcommand'.\n");
 	}
 	$self->$method(@arguments);
+    }
 }
 
 sub cmd__help {
