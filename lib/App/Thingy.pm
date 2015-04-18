@@ -229,17 +229,17 @@ use File::Basename qw(basename);
 
 our $__PROGNAME;
 BEGIN {
-	$__PROGNAME = basename($0);
+    $__PROGNAME = basename($0);
 }
 
 sub new {
-	my ($class) = @_;
-	my $self = {};
-	bless($self, $class);
-	if ($self->can("__init")) {
-		$self->__init();
-	}
-	return $self;
+    my ($class) = @_;
+    my $self = {};
+    bless($self, $class);
+    if ($self->can("__init")) {
+	$self->__init();
+    }
+    return $self;
 }
 
 sub run {
@@ -251,7 +251,7 @@ sub run {
 	}
 	$self->$method();
     } else {
-	my $method = $self->__method($subcommand);
+	my $method = $self->__method($subcommand, @arguments);
 	if (!$method) {
 	    $self->__die_help("unknown command '$subcommand'.\n");
 	}
@@ -259,107 +259,136 @@ sub run {
     }
 }
 
-sub cmd__help {
-	my ($self, $subcommand) = @_;
-	if (defined $subcommand) {
-		my ($method, $name) = $self->__help_method($subcommand);
-		if ($method) {
-			my $help = $self->$method();
-			my $syntax      = defined $help ? $help->{syntax}      : undef;
-			my $description = defined $help ? $help->{description} : undef;
-			if (defined $syntax) {
-				print("usage: $__PROGNAME $subcommand $syntax\n");
-			} else {
-				print("usage: $__PROGNAME $subcommand\n");
-			}
-			if (defined $description) {
-				print("$description\n");
-			}
-		} else {
-			$self->__die_help("No specific help for '$name'.\n");
-		}
-	} else {
-		my $subcommand_help_is_available = 0;
-		print("usage:\n");
-		foreach my $subcommand ($self->__subcommand_list()) {
-			my ($method, $name) = $self->__help_method($subcommand);
-			if ($method) {
-				my $help = $self->$method();
-				my $syntax      = defined $help ? $help->{syntax}      : undef;
-				my $description = defined $help ? $help->{description} : undef;
-				$subcommand_help_is_available = 1;
-				if (defined $syntax) {
-					print("  * $__PROGNAME $subcommand $syntax\n");
-				} else {
-					print("  * $__PROGNAME $subcommand\n");
-				}
-			} else {
-				print("    $__PROGNAME $subcommand\n");
-			}
-		}
-		if ($subcommand_help_is_available) {
-			print("\n");
-			print("For help on each available subcommand (indicated with * above), type:\n");
-			print("  $__PROGNAME help <subcommand>\n");
-		}
+sub __show_command_help {
+    my ($self, $subcommand) = @_;
+    if (defined $subcommand) {
+	my ($method, $name) = $self->__help_method($subcommand);
+	if ($method) {
+	    my $help = $self->$method();
+	    my $syntax      = eval { $help->{syntax}      };
+	    my $description = eval { $help->{description} };
+	    my $required    = eval { $help->{required}    };
+	    my $optional    = eval { $help->{optional}    };
+	    if (defined $required) {
+		my $required_help = defined $required ? (eval { join(" ", @$required) } || $required) : "";
+		my $optional_help = defined $optional ? (eval { join(" ", @$optional) } || $optional) : "";
+		print("usage: $__PROGNAME $subcommand");
+		print(" $required_help") if defined $required;
+		print(" [$optional_help]") if defined $optional;
+		print("\n");
+	    } elsif (defined $syntax) {
+		print("usage: $__PROGNAME $subcommand $syntax\n");
+	    } else {
+		print("usage: $__PROGNAME $subcommand\n");
+	    }
+	    if (defined $description) {
+		print("$description\n");
+	    }
+	    return 1;
 	}
+    }
+    return 0;
+}
+
+sub cmd__help {
+    my ($self, $subcommand) = @_;
+    if (defined $subcommand) {
+	if (!$self->__show_command_help($subcommand)) {
+	    $self->__die_help("No specific help for '$subcommand'.\n");
+	}
+    } else {
+	my $subcommand_help_is_available = 0;
+	foreach my $subcommand ($self->__subcommand_list()) {
+	    if ($self->__show_command_help($subcommand)) {
+		$subcommand_help_is_available = 1;
+	    } else {
+		print("usage: $__PROGNAME $subcommand ... (no help available)\n");
+	    }
+	}
+	if ($subcommand_help_is_available) {
+	    print("\n");
+	    print("For help on each available subcommand (indicated with * above), type:\n");
+	    print("  $__PROGNAME help <subcommand>\n");
+	}
+    }
 }
 
 sub __subcommand_list {
-	my ($self) = @_;
-	my @subcommands = do {
-		no strict "refs";
-		sort map { m{^cmd__} ? $' : () } keys(%{ref($self) . "::"});
-	};
-	s{^cmd__}{} foreach @subcommands;
-	s{_}{-}g    foreach @subcommands;
-	return @subcommands;
+    my ($self) = @_;
+    my @subcommands = do {
+	no strict "refs";
+	sort
+	  grep { /[a-z]/ }	# no all-uppercase stuff
+	  map { m{^cmd__} ? $' : () }
+	  keys(%{ref($self) . "::"});
+    };
+    s{^cmd__}{} foreach @subcommands;
+    s{_}{-}g    foreach @subcommands;
+    return @subcommands;
 }
 
 sub __method {
-	my ($self, $subcommand) = @_;
-	return undef if !defined $subcommand;
-	$subcommand = $self->__normalize($subcommand);
-	my $method_name = "cmd__$subcommand";
+    my ($self, $subcommand, @args) = @_;
+    return undef if !defined $subcommand;
+    $subcommand = $self->__normalize($subcommand);
+    my $method_name = "cmd__$subcommand";
+    my $method = $self->can($method_name);
+    if ($method) {
 	if (wantarray) {
-		return ($self->can($method_name), $subcommand);
+	    return ($method, $subcommand, @args);
 	} else {
-		return $self->can($method_name);
+	    return $method;
 	}
+    }
+    my $autoload = $self->can("cmd__AUTOLOAD");
+    if ($autoload) {
+	my @cmd = $self->$autoload($subcommand, @args);
+	print(">> @cmd <<\n");
+	if (!scalar(@cmd)) {
+	    return undef;
+	}
+	return $self->__method(@cmd);
+    }
+    return undef;
 }
 
 sub __help_method {
-	my ($self, $subcommand) = @_;
-	return undef if !defined $subcommand;
-	$subcommand = $self->__normalize($subcommand);
-	my $method_name = "help__$subcommand";
-	if (wantarray) {
-		return ($self->can($method_name), $subcommand);
-	} else {
-		return $self->can($method_name);
-	}
+    my ($self, $subcommand) = @_;
+    return undef if !defined $subcommand;
+    $subcommand = $self->__normalize($subcommand);
+    my $method_name = "help__$subcommand";
+    if (wantarray) {
+	return ($self->can($method_name), $subcommand);
+    } else {
+	return $self->can($method_name);
+    }
 }
 
 sub __normalize {
-	my ($self, $subcommand) = @_;
-	$subcommand =~ s{\-}{_}g;
-	return $subcommand;
+    my ($self, $subcommand) = @_;
+    $subcommand =~ s{\-}{_}g;
+    return $subcommand;
 }
 
 sub __warn {
-	my ($self, @args) = @_;
-	warn("$__PROGNAME: " . join("", @args));
+    my ($self, @args) = @_;
+    warn("$__PROGNAME: " . join("", @args));
 }
 
 sub __die {
-	my ($self, @args) = @_;
-	die("$__PROGNAME: " . join("", @args));
+    my ($self, @args) = @_;
+    die("$__PROGNAME: " . join("", @args));
 }
 
 sub __die_help {
-	my ($self, @args) = @_;
-	$self->__warn(@args);
-	$self->__die("Type '$__PROGNAME help' for help.\n");
+    my ($self, @args) = @_;
+    $self->__warn(@args);
+    $self->__die("Type '$__PROGNAME help' for help.\n");
+}
+
+sub is_subcommand {
+    my ($self, $subcommand, @args) = @_;
+    return $self->__method($subcommand, @args) ? 1 : 0;
 }
 
 1;
